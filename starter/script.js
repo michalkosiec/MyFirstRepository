@@ -1,260 +1,311 @@
 'use strict';
 
-/////////////////////////////////////////////////
-/////////////////////////////////////////////////
-// BANKIST APP
+class Workout {
+  date = new Date();
+  id = (Date.now() + '').slice(-10);
+  clicks = 0;
 
-// Data
-const account1 = {
-  owner: 'Jonas Schmedtmann',
-  movements: [200, 450, -400, 3000, -650, -130, 70, 1300],
-  interestRate: 1.2, // %
-  pin: 1111,
-};
+  constructor(coords, distance, duration) {
+    this.coords = coords; // [lat, lng]
+    this.distance = distance; // in km
+    this.duration = duration; // in min
+  }
 
-const account2 = {
-  owner: 'Jessica Davis',
-  movements: [5000, 3400, -150, -790, -3210, -1000, 8500, -30],
-  interestRate: 1.5,
-  pin: 2222,
-};
+  _setDescription() {
+    // prettier-ignore
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const account3 = {
-  owner: 'Steven Thomas Williams',
-  movements: [200, -200, 340, -300, -20, 50, 400, -460],
-  interestRate: 0.7,
-  pin: 3333,
-};
+    this.description = `${this.type[0].toUpperCase()}${this.type.slice(1)} on ${
+      months[this.date.getMonth()]
+    } ${this.date.getDate()}`;
+  }
 
-const account4 = {
-  owner: 'Sarah Smith',
-  movements: [430, 1000, 700, 50, 90],
-  interestRate: 1,
-  pin: 4444,
-};
+  click() {
+    this.clicks++;
+    console.log('clicked');
+  }
+}
 
-const accounts = [account1, account2, account3, account4];
+class Running extends Workout {
+  type = 'running';
 
-// Elements
-const labelWelcome = document.querySelector('.welcome');
-const labelDate = document.querySelector('.date');
-const labelBalance = document.querySelector('.balance__value');
-const labelSumIn = document.querySelector('.summary__value--in');
-const labelSumOut = document.querySelector('.summary__value--out');
-const labelSumInterest = document.querySelector('.summary__value--interest');
-const labelTimer = document.querySelector('.timer');
+  constructor(coords, distance, duration, cadence) {
+    super(coords, distance, duration);
+    this.cadence = cadence;
+    this.calcPace();
+    this._setDescription();
+  }
 
-const containerApp = document.querySelector('.app');
-const containerMovements = document.querySelector('.movements');
+  calcPace() {
+    // min/km
+    this.pace = this.duration / this.distance;
+    return this.pace;
+  }
+}
 
-const btnLogin = document.querySelector('.login__btn');
-const btnTransfer = document.querySelector('.form__btn--transfer');
-const btnLoan = document.querySelector('.form__btn--loan');
-const btnClose = document.querySelector('.form__btn--close');
-const btnSort = document.querySelector('.btn--sort');
+class Cycling extends Workout {
+  type = 'cycling';
 
-const inputLoginUsername = document.querySelector('.login__input--user');
-const inputLoginPin = document.querySelector('.login__input--pin');
-const inputTransferTo = document.querySelector('.form__input--to');
-const inputTransferAmount = document.querySelector('.form__input--amount');
-const inputLoanAmount = document.querySelector('.form__input--loan-amount');
-const inputCloseUsername = document.querySelector('.form__input--user');
-const inputClosePin = document.querySelector('.form__input--pin');
+  constructor(coords, distance, duration, elevGain) {
+    super(coords, distance, duration);
+    this.elevGain = elevGain;
+    this.calcSpeed();
+    this._setDescription();
+  }
 
-const displayMovements = function (movements) {
-  containerMovements.innerHTML = '';
+  calcSpeed() {
+    // km/h
+    this.speed = this.distance / (this.duration / 60);
+    return this.speed;
+  }
+}
 
-  movements.forEach(function (mov, i) {
-    const type = mov > 0 ? 'deposit' : 'withdrawal';
+// const run1 = new Running([39, -12], 5.2, 24, 178);
+// const cycling1 = new Cycling([39, -12], 27, 95, 523);
+// console.log(run1, cycling1);
 
-    const html = `
-    <div class="movements__row">
-      <div class="movements__type movements__type--${type}">${
-      i + 1
-    } ${type}</div>
-      <div class="movements__value">${mov}</div>
-    </div>
+///////////////////////////////////////
+// APPLICATION ARCHITECTURE
+const form = document.querySelector('.form');
+const containerWorkouts = document.querySelector('.workouts');
+const inputType = document.querySelector('.form__input--type');
+const inputDistance = document.querySelector('.form__input--distance');
+const inputDuration = document.querySelector('.form__input--duration');
+const inputCadence = document.querySelector('.form__input--cadence');
+const inputElevation = document.querySelector('.form__input--elevation');
+
+class App {
+  #map;
+  #mapZoomLevel = 13;
+  #mapEvent;
+  #workouts = [];
+
+  constructor() {
+    // Get user's position
+    this._getPosition();
+
+    // Get data from local storage
+    this._getLocalStorage();
+
+    // Attach event handlers
+    form.addEventListener('submit', this._newWorkout.bind(this));
+    inputType.addEventListener('change', this._toggleElevationField);
+    containerWorkouts.addEventListener('click', this._moveToPopup.bind(this));
+  }
+
+  _getPosition() {
+    navigator.geolocation &&
+      navigator.geolocation.getCurrentPosition(
+        this._loadMap.bind(this),
+        function () {
+          alert('Could not get your position');
+        }
+      );
+  }
+
+  _loadMap(position) {
+    const { latitude, longitude } = position.coords;
+    // console.log(`https://www.google.pl/maps/@${latitude},${longitude}`);
+    const coords = [latitude, longitude];
+
+    this.#map = L.map('map').setView(coords, this.#mapZoomLevel);
+    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(this.#map);
+
+    // Handling clicks on map
+    this.#map.on('click', this._showForm.bind(this));
+
+    // Restoring workouts on list
+    this.#workouts.forEach(workout => {
+      this._renderWorkoutMarker.call(this, workout);
+    });
+  }
+
+  _showForm(mapE) {
+    this.#mapEvent = mapE;
+    form.classList.remove('hidden');
+    inputDistance.focus();
+  }
+
+  _hideForm() {
+    // Empty inputs
+    // prettier-ignore
+    inputDistance.value = inputDuration.value = inputCadence.value = inputElevation.value = '';
+
+    form.style.display = 'none';
+    form.classList.add('hidden');
+    setTimeout(() => (form.style.display = 'grid'), 1);
+  }
+
+  _toggleElevationField() {
+    inputCadence.closest('.form__row').classList.toggle('form__row--hidden');
+    inputElevation.closest('.form__row').classList.toggle('form__row--hidden');
+  }
+
+  _newWorkout(e) {
+    const validInputs = (...inputs) =>
+      inputs.every(input => Number.isFinite(input));
+    const allPositive = (...inputs) => inputs.every(input => input > 0);
+
+    e.preventDefault();
+
+    // Get data from form
+    const type = inputType.value;
+    const distance = +inputDistance.value;
+    const duration = +inputDuration.value;
+    const { lat, lng } = this.#mapEvent.latlng;
+    const coords = [lat, lng];
+    let workout;
+
+    // If workout running, create running object
+    if (type === 'running') {
+      const cadence = +inputCadence.value;
+      // Validate data
+      if (
+        !validInputs(distance, duration, cadence) ||
+        !allPositive(distance, duration, cadence)
+      )
+        return alert('Inputs have to be positive numbers!');
+
+      workout = new Running(coords, distance, duration, cadence);
+    }
+
+    // If workout cycling, create cycling object
+    if (type === 'cycling') {
+      const elevation = +inputElevation.value;
+      // Validate data
+      if (
+        !validInputs(distance, duration, elevation) ||
+        !allPositive(distance, duration)
+      )
+        return alert(
+          'Inputs have to be positive numbers (except for elevation gain)!'
+        );
+
+      workout = new Cycling(coords, distance, duration, elevation);
+    }
+
+    // Add new object to workout array
+    this.#workouts.push(workout);
+
+    // Render workout on map as marker
+    this._renderWorkoutMarker(workout);
+
+    // Render workout on the list
+    this._renderWorkout(workout);
+
+    // Hide form and clear input fields
+    this._hideForm();
+
+    // Set local storage to all workouts
+    this._setLocalStorage();
+  }
+
+  _renderWorkoutMarker(workout) {
+    L.marker(workout.coords)
+      .addTo(this.#map)
+      .bindPopup(
+        L.popup({
+          maxWidth: 250,
+          minWidth: 100,
+          autoClose: false,
+          closeOnClick: false,
+          className: `${workout.type}-popup`,
+        })
+      )
+      .setPopupContent(
+        `${workout.type === 'running' ? '🏃‍♂️' : '🚴‍♀️'} ${workout.description}`
+      )
+      .openPopup();
+  }
+
+  _renderWorkout(workout) {
+    let html = `
+    <li class="workout workout--${workout.type}" data-id="${workout.id}">
+      <h2 class="workout__title">${workout.description}</h2>
+      <div class="workout__details">
+        <span class="workout__icon">${
+          workout.type === 'running' ? '🏃‍♂️' : '🚴‍♀️'
+        }</span>
+        <span class="workout__value">${workout.distance}</span>
+        <span class="workout__unit">km</span>
+      </div>
+      <div class="workout__details">
+        <span class="workout__icon">⏱</span>
+        <span class="workout__value">${workout.duration}</span>
+        <span class="workout__unit">min</span>
+      </div>
     `;
-    containerMovements.insertAdjacentHTML('afterbegin', html);
-  });
-};
-displayMovements(account1.movements);
 
-/////////////////////////////////////////////////
-/////////////////////////////////////////////////
-// LECTURES
+    if (workout.type === 'running')
+      html += `
+      <div class="workout__details">
+        <span class="workout__icon">⚡️</span>
+        <span class="workout__value">${workout.pace.toFixed(1)}</span>
+        <span class="workout__unit">min/km</span>
+      </div>
+      <div class="workout__details">
+        <span class="workout__icon">🦶🏼</span>
+        <span class="workout__value">${workout.cadence}</span>
+        <span class="workout__unit">spm</span>
+      </div>
+    </li>
+    `;
 
-// const currencies = new Map([
-//   ['USD', 'United States dollar'],
-//   ['EUR', 'Euro'],
-//   ['GBP', 'Pound sterling'],
-// ]);
+    if (workout.type === 'cycling')
+      html += `
+      <div class="workout__details">
+        <span class="workout__icon">⚡️</span>
+        <span class="workout__value">${workout.speed.toFixed(1)}</span>
+        <span class="workout__unit">km/h</span>
+      </div>
+      <div class="workout__details">
+        <span class="workout__icon">⛰</span>
+        <span class="workout__value">${workout.elevGain}</span>
+        <span class="workout__unit">m</span>
+      </div>
+    </li>
+    `;
 
-// const movements = [200, 450, -400, 3000, -650, -130, 70, 1300];
+    form.insertAdjacentHTML('afterend', html);
+  }
 
-/////////////////////////////////////////////////
+  _moveToPopup(e) {
+    const workoutEl = e.target.closest('.workout');
+    if (!workoutEl) return;
 
-// SLICE (doesn't mutate)
-// let arr = ['a', 'b', 'c', 'd', 'e'];
-// console.log(arr.slice(2));
-// console.log(arr.slice(2, 4));
-// console.log(arr.slice(-2));
-// console.log(arr.slice(-1));
-// console.log(arr.slice(1, -2));
-// console.log(arr.slice());
-// console.log([...arr]);
+    const workout = this.#workouts.find(el => el.id === workoutEl.dataset.id);
 
-// SPLICE (mutates)
-// console.log(arr.splice(2));
-// arr.splice(-1);
-// console.log(arr);
-// arr.splice(1, 2);
-// console.log(arr);
+    this.#map.setView(workout.coords, this.#mapZoomLevel, {
+      animate: true,
+      duration: 1,
+    });
 
-// REVERSE (mutates)
-// arr = ['a', 'b', 'c', 'd', 'e'];
-// const arr2 = ['j', 'i', 'h', 'g', 'f'];
-// console.log(arr2.reverse());
-// console.log(arr2);
+    // Using the public interface
+    // workout.click();
+  }
 
-// CONCAT (doesn't mutate)
-// const letters = arr.concat(arr2);
-// console.log(letters);
-// console.log([...arr, ...arr2]);
+  _setLocalStorage() {
+    localStorage.setItem('workouts', JSON.stringify(this.#workouts));
+  }
 
-// JOIN (doesn't mutate)
-// console.log(letters.join(' - '));
+  _getLocalStorage() {
+    const data = JSON.parse(localStorage.getItem('workouts'));
 
-// const arr = [23, 11, 64];
-// console.log(arr[0]);
-// console.log(arr.at(0));
+    if (!data) return;
 
-// getting last array element
-// console.log(arr[arr.length - 1]);
-// console.log(arr.slice(-1)[0]);
-// console.log(arr.at(-1));
+    this.#workouts = data;
+    this.#workouts.forEach(workout => {
+      this._renderWorkout(workout);
+    });
+  }
 
-// console.log('jonas'.at(0));
-// console.log('jonas'.at(-1));
+  reset() {
+    localStorage.removeItem('workouts');
+    location.reload();
+  }
+}
 
-// const movements2 = [200, 450, -400, 3000, -650, -130, 70, 1300];
-
-// for (const [index, movement] of movements2.entries()) {
-//   if (movement > 0) {
-//     console.log(`Movement ${index + 1}: You deposited ${Math.abs(movement)}$`);
-//   } else {
-//     console.log(`Movement ${index + 1}: You withdrew ${Math.abs(movement)}$`);
-//   }
-// }
-
-// console.log('//////////////////////////');
-
-// movements2.forEach(function (mow, i) {
-//   if (mow > 0) {
-//     console.log(`mow ${i + 1}: You deposited ${Math.abs(mow)}$`);
-//   } else {
-//     console.log(`mow ${i + 1}: You withdrew ${Math.abs(mow)}$`);
-//   }
-// });
-
-// Map
-// const currencies2 = new Map([
-//   ['USD', 'United States dollar'],
-//   ['EUR', 'Euro'],
-//   ['GBP', 'Pound sterling'],
-// ]);
-
-// currencies2.forEach(function (value, key, map) {
-//   console.log(`${key}: ${value}`);
-// });
-
-// Set
-// const currenciesUnique = new Set(['USD', 'GBP', 'USD', 'EUR', 'EUR']);
-// console.log(currenciesUnique);
-
-// currenciesUnique.forEach(function (value, _, map) {
-//   // '_' is a throwaway variable (useless)
-//   console.log(`${value}: ${value}`);
-// });
-
-/*
-Coding Challenge #1
-Julia and Kate are doing a study on dogs. So each of them asked 5 dog owners 
-about their dog's age, and stored the data into an array (one array for each). For 
-now, they are just interested in knowing whether a dog is an adult or a puppy.
-A dog is an adult if it is at least 3 years old, and it's a puppy if it's less than 3 years 
-old.
-Your tasks:
-Create a function 'checkDogs', which accepts 2 arrays of dog's ages 
-('dogsJulia' and 'dogsKate'), and does the following things:
-1. Julia found out that the owners of the first and the last two dogs actually have 
-cats, not dogs! So create a shallow copy of Julia's array, and remove the cat 
-ages from that copied array (because it's a bad practice to mutate function 
-parameters)
-2. Create an array with both Julia's (corrected) and Kate's data
-3. For each remaining dog, log to the console whether it's an adult ("Dog number 1 
-is an adult, and is 5 years old") or a puppy ("Dog number 2 is still a puppy")
-4. Run the function for both test datasets
-Test data:
-§ Data 1: Julia's data [3, 5, 2, 12, 7], Kate's data [4, 1, 15, 8, 3]
-§ Data 2: Julia's data [9, 16, 6, 8, 3], Kate's data [10, 5, 6, 1, 4]
-Hints: Use tools from all lectures in this section so far
-
-GOOD LUCK
-*/
-
-// // Test data 1
-// const juliasDogs1 = [3, 5, 2, 12, 7];
-// const katesDogs1 = [4, 1, 15, 8, 3];
-
-// // Test data 2
-// const juliasDogs2 = [9, 16, 6, 8, 3];
-// const katesDogs2 = [10, 5, 6, 1, 4];
-
-// // Coding challenge
-// const checkDogs = function (arr1, arr2) {
-//   const correctedArr1 = arr1.slice(1, -2);
-//   const bothArrs = correctedArr1.concat(arr2);
-//   const callback = function (age, index) {
-//     console.log(
-//       `Dog number ${index + 1} is ${
-//         age >= 3 ? `an adult and is ${age} years old` : `still a puppy 🐶`
-//       }`
-//     );
-//   };
-//   console.log(bothArrs);
-//   console.log('Julias ____');
-//   correctedArr1.forEach(callback);
-//   console.log('Kates ____');
-//   arr2.forEach(callback);
-// };
-
-// console.log('Test data 1 ____');
-// checkDogs(juliasDogs1, katesDogs1);
-// console.log(`Test data 2 ____`);
-// checkDogs(juliasDogs2, katesDogs2);
-
-// const obj1 = {
-//   obj2: {
-//     fn() {
-//       console.log(this);
-//     },
-//     arr2: [3, 4],
-//   },
-//   arr1: [1, 2],
-// };
-
-// obj1.obj2.fn();
-// console.log(
-//   obj1.arr1.filter(function (el) {
-//     console.log(this);
-//     return true;
-//   })
-// );
-
-// console.log(
-//   obj1.arr1.filter(el => {
-//     console.log(this);
-//     return true;
-//   })
-// );
+const app = new App();
