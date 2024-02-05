@@ -1,311 +1,91 @@
-'use strict';
+// Importing module
+// console.log('Importing module');
+// import {addToCart, totalPrice as price, tq} from './shoppingCart.js'
+// addToCart('bread', 5);
+// console.log(price, tq)
+// import * as ShoppingCart from './shoppingCart.js';
+// ShoppingCart.addToCart('bread', 5);
+// import add, { addToCart, totalPrice as price, tq } from './shoppingCart.js';
+// console.log(price);
+import add, { cart } from './shoppingCart.js';
+add('pizza', 2);
+add('bread', 2);
+add('apples', 4);
+console.log(cart);
+// console.log('sth');
 
-class Workout {
-  date = new Date();
-  id = (Date.now() + '').slice(-10);
-  clicks = 0;
+// const res = await fetch('https://jsonplaceholder.typicode.com/posts');
+// console.log(res)
+// const data = await res.json();
+// console.log(data);
 
-  constructor(coords, distance, duration) {
-    this.coords = coords; // [lat, lng]
-    this.distance = distance; // in km
-    this.duration = duration; // in min
-  }
+// const getLastPost = async function () {
+//   const res = await fetch('https://jsonplaceholder.typicode.com/posts');
+//   const data = await res.json();
+//   console.log(data);
+//   return {
+//     title: data.at(-1).title,
+//     text: data.at(-1).body,
+//   };
+// };
 
-  _setDescription() {
-    // prettier-ignore
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// Not clean
+// const lastPost = getLastPost();
+// lastPost.then(last => console.log(last));
+// const lastPost = await getLastPost();
+// console.log(lastPost);
 
-    this.description = `${this.type[0].toUpperCase()}${this.type.slice(1)} on ${
-      months[this.date.getMonth()]
-    } ${this.date.getDate()}`;
-  }
+// The module pattern
+// const ShoppingCart = (function () {
+//   const cart = [];
+//   const shippingCost = 10;
+//   const totalPrice = 237;
+//   const totalQuantity = 23;
+//   const addToCart = function (product, quantity) {
+//     cart.push({ product, quantity });
+//     console.log(
+//       `${quantity} ${product} added to cart (shipping cost is ${shippingCost})`
+//     );
+//   };
 
-  click() {
-    this.clicks++;
-    console.log('clicked');
-  }
-}
+//   const orderStock = function (product, quantity) {
+//     console.log(`${quantity} ${product} ordered from supplier`);
+//   };
+//   return {
+//     addToCart,
+//     cart,
+//     totalPrice,
+//     totalQuantity,
+//   };
+// })();
 
-class Running extends Workout {
-  type = 'running';
+// ShoppingCart.addToCart('apple', 4);
+// ShoppingCart.addToCart('pizza', 2);
+// console.log(ShoppingCart);
+// console.log(ShoppingCart.shippingCost);
 
-  constructor(coords, distance, duration, cadence) {
-    super(coords, distance, duration);
-    this.cadence = cadence;
-    this.calcPace();
-    this._setDescription();
-  }
+// Export
+// export.addToCart = function (product, quantity) {
+//   cart.push({ product, quantity });
+//   console.log(
+//     `${quantity} ${product} added to cart (shipping cost is ${shippingCost})`
+//   );
+// };
 
-  calcPace() {
-    // min/km
-    this.pace = this.duration / this.distance;
-    return this.pace;
-  }
-}
+// Import
+// const { addToCart} = require('./shoppingCart.js');
 
-class Cycling extends Workout {
-  type = 'cycling';
+// import cloneDeep from './node_modules/lodash-es/cloneDeep.js';
+// const state = {
+//   cart: [
+//     { product: 'bread', quantity: 5 },
+//     { product: 'pizza', quantity: 5 },
+//   ],
+//   user: { loggedIn: true },
+// };
 
-  constructor(coords, distance, duration, elevGain) {
-    super(coords, distance, duration);
-    this.elevGain = elevGain;
-    this.calcSpeed();
-    this._setDescription();
-  }
-
-  calcSpeed() {
-    // km/h
-    this.speed = this.distance / (this.duration / 60);
-    return this.speed;
-  }
-}
-
-// const run1 = new Running([39, -12], 5.2, 24, 178);
-// const cycling1 = new Cycling([39, -12], 27, 95, 523);
-// console.log(run1, cycling1);
-
-///////////////////////////////////////
-// APPLICATION ARCHITECTURE
-const form = document.querySelector('.form');
-const containerWorkouts = document.querySelector('.workouts');
-const inputType = document.querySelector('.form__input--type');
-const inputDistance = document.querySelector('.form__input--distance');
-const inputDuration = document.querySelector('.form__input--duration');
-const inputCadence = document.querySelector('.form__input--cadence');
-const inputElevation = document.querySelector('.form__input--elevation');
-
-class App {
-  #map;
-  #mapZoomLevel = 13;
-  #mapEvent;
-  #workouts = [];
-
-  constructor() {
-    // Get user's position
-    this._getPosition();
-
-    // Get data from local storage
-    this._getLocalStorage();
-
-    // Attach event handlers
-    form.addEventListener('submit', this._newWorkout.bind(this));
-    inputType.addEventListener('change', this._toggleElevationField);
-    containerWorkouts.addEventListener('click', this._moveToPopup.bind(this));
-  }
-
-  _getPosition() {
-    navigator.geolocation &&
-      navigator.geolocation.getCurrentPosition(
-        this._loadMap.bind(this),
-        function () {
-          alert('Could not get your position');
-        }
-      );
-  }
-
-  _loadMap(position) {
-    const { latitude, longitude } = position.coords;
-    // console.log(`https://www.google.pl/maps/@${latitude},${longitude}`);
-    const coords = [latitude, longitude];
-
-    this.#map = L.map('map').setView(coords, this.#mapZoomLevel);
-    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(this.#map);
-
-    // Handling clicks on map
-    this.#map.on('click', this._showForm.bind(this));
-
-    // Restoring workouts on list
-    this.#workouts.forEach(workout => {
-      this._renderWorkoutMarker.call(this, workout);
-    });
-  }
-
-  _showForm(mapE) {
-    this.#mapEvent = mapE;
-    form.classList.remove('hidden');
-    inputDistance.focus();
-  }
-
-  _hideForm() {
-    // Empty inputs
-    // prettier-ignore
-    inputDistance.value = inputDuration.value = inputCadence.value = inputElevation.value = '';
-
-    form.style.display = 'none';
-    form.classList.add('hidden');
-    setTimeout(() => (form.style.display = 'grid'), 1);
-  }
-
-  _toggleElevationField() {
-    inputCadence.closest('.form__row').classList.toggle('form__row--hidden');
-    inputElevation.closest('.form__row').classList.toggle('form__row--hidden');
-  }
-
-  _newWorkout(e) {
-    const validInputs = (...inputs) =>
-      inputs.every(input => Number.isFinite(input));
-    const allPositive = (...inputs) => inputs.every(input => input > 0);
-
-    e.preventDefault();
-
-    // Get data from form
-    const type = inputType.value;
-    const distance = +inputDistance.value;
-    const duration = +inputDuration.value;
-    const { lat, lng } = this.#mapEvent.latlng;
-    const coords = [lat, lng];
-    let workout;
-
-    // If workout running, create running object
-    if (type === 'running') {
-      const cadence = +inputCadence.value;
-      // Validate data
-      if (
-        !validInputs(distance, duration, cadence) ||
-        !allPositive(distance, duration, cadence)
-      )
-        return alert('Inputs have to be positive numbers!');
-
-      workout = new Running(coords, distance, duration, cadence);
-    }
-
-    // If workout cycling, create cycling object
-    if (type === 'cycling') {
-      const elevation = +inputElevation.value;
-      // Validate data
-      if (
-        !validInputs(distance, duration, elevation) ||
-        !allPositive(distance, duration)
-      )
-        return alert(
-          'Inputs have to be positive numbers (except for elevation gain)!'
-        );
-
-      workout = new Cycling(coords, distance, duration, elevation);
-    }
-
-    // Add new object to workout array
-    this.#workouts.push(workout);
-
-    // Render workout on map as marker
-    this._renderWorkoutMarker(workout);
-
-    // Render workout on the list
-    this._renderWorkout(workout);
-
-    // Hide form and clear input fields
-    this._hideForm();
-
-    // Set local storage to all workouts
-    this._setLocalStorage();
-  }
-
-  _renderWorkoutMarker(workout) {
-    L.marker(workout.coords)
-      .addTo(this.#map)
-      .bindPopup(
-        L.popup({
-          maxWidth: 250,
-          minWidth: 100,
-          autoClose: false,
-          closeOnClick: false,
-          className: `${workout.type}-popup`,
-        })
-      )
-      .setPopupContent(
-        `${workout.type === 'running' ? '🏃‍♂️' : '🚴‍♀️'} ${workout.description}`
-      )
-      .openPopup();
-  }
-
-  _renderWorkout(workout) {
-    let html = `
-    <li class="workout workout--${workout.type}" data-id="${workout.id}">
-      <h2 class="workout__title">${workout.description}</h2>
-      <div class="workout__details">
-        <span class="workout__icon">${
-          workout.type === 'running' ? '🏃‍♂️' : '🚴‍♀️'
-        }</span>
-        <span class="workout__value">${workout.distance}</span>
-        <span class="workout__unit">km</span>
-      </div>
-      <div class="workout__details">
-        <span class="workout__icon">⏱</span>
-        <span class="workout__value">${workout.duration}</span>
-        <span class="workout__unit">min</span>
-      </div>
-    `;
-
-    if (workout.type === 'running')
-      html += `
-      <div class="workout__details">
-        <span class="workout__icon">⚡️</span>
-        <span class="workout__value">${workout.pace.toFixed(1)}</span>
-        <span class="workout__unit">min/km</span>
-      </div>
-      <div class="workout__details">
-        <span class="workout__icon">🦶🏼</span>
-        <span class="workout__value">${workout.cadence}</span>
-        <span class="workout__unit">spm</span>
-      </div>
-    </li>
-    `;
-
-    if (workout.type === 'cycling')
-      html += `
-      <div class="workout__details">
-        <span class="workout__icon">⚡️</span>
-        <span class="workout__value">${workout.speed.toFixed(1)}</span>
-        <span class="workout__unit">km/h</span>
-      </div>
-      <div class="workout__details">
-        <span class="workout__icon">⛰</span>
-        <span class="workout__value">${workout.elevGain}</span>
-        <span class="workout__unit">m</span>
-      </div>
-    </li>
-    `;
-
-    form.insertAdjacentHTML('afterend', html);
-  }
-
-  _moveToPopup(e) {
-    const workoutEl = e.target.closest('.workout');
-    if (!workoutEl) return;
-
-    const workout = this.#workouts.find(el => el.id === workoutEl.dataset.id);
-
-    this.#map.setView(workout.coords, this.#mapZoomLevel, {
-      animate: true,
-      duration: 1,
-    });
-
-    // Using the public interface
-    // workout.click();
-  }
-
-  _setLocalStorage() {
-    localStorage.setItem('workouts', JSON.stringify(this.#workouts));
-  }
-
-  _getLocalStorage() {
-    const data = JSON.parse(localStorage.getItem('workouts'));
-
-    if (!data) return;
-
-    this.#workouts = data;
-    this.#workouts.forEach(workout => {
-      this._renderWorkout(workout);
-    });
-  }
-
-  reset() {
-    localStorage.removeItem('workouts');
-    location.reload();
-  }
-}
-
-const app = new App();
+// const stateDeepClone = cloneDeep(state);
+// const stateClone = Object.assign({}, state);
+// state.user.loggedIn = false;
+// console.log(stateClone);
+// console.log(stateDeepClone);
